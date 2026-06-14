@@ -1,0 +1,14 @@
+{
+  "_comment": "Optional. No API key needed — data comes from ESPN's free API.",
+  "_comment2": "Override which competitions to watch (ESPN league slugs):",
+  "leagues": [
+    ["fifa.world", "World Cup"],
+    ["uefa.champions", "Champions League"],
+    ["eng.1", "Premier League"],
+    ["esp.1", "La Liga"],
+    ["ita.1", "Serie A"],
+    ["ger.1", "Bundesliga"],
+    ["fra.1", "Ligue 1"],
+    ["usa.1", "MLS"]
+  ]
+}
