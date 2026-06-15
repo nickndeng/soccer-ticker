@@ -76,3 +76,29 @@ Other ESPN slugs include `eng.2` (Championship), `ned.1` (Eredivisie),
 - Why not football-data.org? Its free tier does **not** provide real-time
   in-play status — a World Cup match 40 minutes in still reported as
   "scheduled". ESPN's feed updates live.
+
+## License
+
+This project is licensed under
+[**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International**](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+(CC BY-NC-SA 4.0) — see [`LICENSE`](LICENSE). In short, you may use, share, and
+modify it **for non-commercial purposes**, as long as you give credit and
+release any derivatives under the same terms.
+
+Note: this is a *source-available* license, not an OSI-approved "open source"
+one — the non-commercial restriction is intentional.
+
+### Commercial licensing
+
+The non-commercial terms above do **not** permit commercial use. As the
+copyright holder, the author offers separate **commercial licenses** for use in
+commercial products or services — contact nickndeng@gmail.com to arrange one.
+(Contributions via pull request are accepted under a Contributor License
+Agreement so the project can continue to be dual-licensed.)
+
+### Third-party content
+
+This license covers the application's own source code only. Match data comes
+from ESPN's public API and competition/team **logos are trademarks of their
+respective owners**, fetched at runtime and not redistributed in this
+repository.
