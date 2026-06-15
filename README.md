@@ -7,6 +7,11 @@ dropdown lists every live game with its competition and clock.
 Data comes from **ESPN's free public scoreboard API** — real-time, **no API key
 or signup required**.
 
+![Soccer Ticker live in the GNOME top bar](docs/topbar.png)
+
+*The tray icon is the live match's competition logo (here, the FIFA World Cup),
+followed by the score and clock. It rotates through all in-progress matches.*
+
 ```
 ┌─ Top bar ───────────────────────────┐
 │ Activities   ⚽ CIV 0-0 ECU 40'  🔋 🔊 │
