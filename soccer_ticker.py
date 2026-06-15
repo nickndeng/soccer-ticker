@@ -209,7 +209,8 @@ class SoccerTicker:
     def _normalize(ev, league_name, logo=None):
         try:
             comp = ev["competitions"][0]
-            status = ev.get("status", {}).get("type", {})
+            status_block = ev.get("status", {})
+            status = status_block.get("type", {})
             if status.get("state") != "in":   # only matches in progress
                 return None
             sides = comp["competitors"]
@@ -225,6 +226,41 @@ class SoccerTicker:
         def full(team):
             return team.get("team", {}).get("displayName", "?")
 
+        # Friendly clock/status. ESPN reports "HT" / "Halftime" — spell it out.
+        is_ht = "HALFTIME" in (status.get("name") or "")
+        if is_ht:
+            clock = "Half Time"
+            status_detail = "Half Time"
+        else:
+            clock = status_block.get("displayClock") or status.get("shortDetail") or "LIVE"
+            desc = status.get("description") or "Live"
+            status_detail = f"{desc} · {clock}" if clock and clock not in desc else desc
+
+        # Per-team statistics (possession, shots, ...), keyed by ESPN stat name.
+        def stats(team):
+            return {s.get("name"): s.get("displayValue") for s in team.get("statistics") or []}
+
+        hs, as_ = stats(home), stats(away)
+
+        # Goals/own-goals from the play-by-play "details" (cards have scoreValue 0).
+        home_id = str(home.get("team", {}).get("id"))
+        scorers = []
+        for p in comp.get("details") or []:
+            text = (p.get("type") or {}).get("text", "") or ""
+            if (p.get("scoreValue") or 0) >= 1 or "goal" in text.lower():
+                names = [a.get("displayName", "?") for a in p.get("athletesInvolved") or []]
+                scorers.append({
+                    "name": names[0] if names else text,
+                    "minute": (p.get("clock") or {}).get("displayValue", ""),
+                    "side": "home" if str((p.get("team") or {}).get("id")) == home_id else "away",
+                    "own": "own" in text.lower(),
+                })
+
+        broadcasts = []
+        for b in comp.get("broadcasts") or []:
+            broadcasts.extend(b.get("names") or [])
+        venue = (comp.get("venue") or ev.get("venue") or {}).get("fullName")
+
         return {
             "home": tag(home),
             "away": tag(away),
@@ -232,9 +268,16 @@ class SoccerTicker:
             "away_full": full(away),
             "hg": _to_int(home.get("score")),
             "ag": _to_int(away.get("score")),
-            "clock": status.get("shortDetail") or "LIVE",
+            "clock": clock,                 # compact, for the tray label
+            "status_detail": status_detail,  # verbose, for the dropdown
             "competition": league_name,
             "logo": logo,
+            "scorers": scorers,
+            "possession": (hs.get("possessionPct"), as_.get("possessionPct")),
+            "shots": (hs.get("totalShots"), as_.get("totalShots")),
+            "shots_on_target": (hs.get("shotsOnTarget"), as_.get("shotsOnTarget")),
+            "venue": venue,
+            "tv": ", ".join(dict.fromkeys(broadcasts)),  # de-duped, order-preserving
         }
 
     def _apply_results(self, matches, error):
@@ -253,12 +296,10 @@ class SoccerTicker:
             self.menu.remove(child)
 
         if self.matches:
-            for m in self.matches:
-                self._add_info(
-                    f"⚽ {m['home']} {m['hg']} - {m['ag']} {m['away']}   {m['clock']}"
-                )
-                if m["competition"]:
-                    self._add_info(f"      {m['competition']}")
+            for i, m in enumerate(self.matches):
+                if i:
+                    self._add_separator()
+                self._add_match(m)
         else:
             self._add_info("No live matches right now")
             if self.last_error:
@@ -278,6 +319,30 @@ class SoccerTicker:
         self.menu.append(quit_item)
 
         self.menu.show_all()
+
+    def _add_match(self, m):
+        """Render one live match as a block of (disabled) detail rows."""
+        self._add_info(f"⚽  {m['home_full']}  {m['hg']} - {m['ag']}  {m['away_full']}")
+        self._add_info(f"      {m['status_detail']}   ·   {m['competition']}")
+
+        for g in m.get("scorers", []):
+            side = m["home"] if g["side"] == "home" else m["away"]
+            mark = "⚽(OG)" if g["own"] else "⚽"
+            minute = f"{g['minute']} " if g["minute"] else ""
+            self._add_info(f"         {mark} {minute}{g['name']} ({side})")
+
+        ph, pa = m.get("possession", (None, None))
+        if ph and pa:
+            self._add_info(f"      Possession  {round(float(ph))}% – {round(float(pa))}%")
+        sh, sa = m.get("shots", (None, None))
+        th, ta = m.get("shots_on_target", (None, None))
+        if sh and sa:
+            extra = f"  ({th}/{ta} on target)" if th and ta else ""
+            self._add_info(f"      Shots  {sh} – {sa}{extra}")
+        if m.get("venue"):
+            self._add_info(f"      📍 {m['venue']}")
+        if m.get("tv"):
+            self._add_info(f"      📺 {m['tv']}")
 
     def _add_info(self, text):
         item = Gtk.MenuItem(label=text)
