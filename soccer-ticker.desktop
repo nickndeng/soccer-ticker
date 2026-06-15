@@ -2,7 +2,8 @@
 Type=Application
 Name=Soccer Ticker
 Comment=Live soccer scores in the system tray
-Exec=python3 %h/git/soccer-ticker/soccer_ticker.py
+Path=%h/git/soccer-ticker
+Exec=python3 -m soccer_ticker
 Icon=applications-games
 Terminal=false
 Categories=Game;Network;

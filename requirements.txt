@@ -1,3 +1,7 @@
 requests>=2.22
-# System (apt) deps, not pip:
+
+# Linux (apt) system deps, not pip:
 #   sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
+#
+# macOS extra (pip):
+#   pip3 install rumps

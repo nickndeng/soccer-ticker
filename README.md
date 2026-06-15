@@ -1,8 +1,8 @@
 # ⚽ Soccer Ticker
 
-Live soccer scores in your Linux system tray (top bar). A small AppIndicator
-shows the score of an in-progress match and rotates through all of them; the
-dropdown lists every live game with its competition and clock.
+Live soccer scores in your **Linux top bar** or **macOS menu bar**. It shows the
+score of an in-progress match and rotates through all of them; the dropdown
+lists every live game with its competition, scorers, cards, stats, form, and odds.
 
 Data comes from **ESPN's free public scoreboard API** — real-time, **no API key
 or signup required**.
@@ -26,7 +26,12 @@ followed by the score and clock. It rotates through all in-progress matches.*
         Quit
 ```
 
-## 1. Install dependencies
+Runs on **Linux** (GTK AppIndicator in the GNOME/KDE top bar) and **macOS**
+(native menu-bar app). Both share the same data core; only the front-end differs.
+
+## Linux
+
+### 1. Install dependencies
 
 ```bash
 sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
@@ -38,23 +43,34 @@ extension, which ships and is enabled by default. On vanilla GNOME, install the
 [AppIndicator Support](https://extensions.gnome.org/extension/615/appindicator-support/)
 extension.
 
-## 2. Run
+### 2. Run
 
 ```bash
-python3 soccer_ticker.py
+python3 -m soccer_ticker      # from the repo root
 ```
 
 The indicator appears in the top bar. With no live matches it shows
-`⚽ no live games`; if the network is down it shows `⚽ offline`.
+`no live games`; if the network is down it shows `offline`.
 
-## 3. Start automatically on login (optional)
+### 3. Start automatically on login (optional)
 
 ```bash
 cp soccer-ticker.desktop ~/.config/autostart/
 ```
 
 (The bundled `.desktop` assumes the project lives in `~/git/soccer-ticker`.
-Adjust the `Exec=` line if you cloned it elsewhere.)
+Adjust the `Path=` line if you cloned it elsewhere.)
+
+## macOS
+
+```bash
+pip3 install requests rumps
+python3 -m soccer_ticker      # from the repo root
+```
+
+The score appears in the menu bar with the competition logo as the icon; click
+it for the full match list. To launch at login, wrap it with a `launchd` agent
+or a tool like [`lingon`](https://www.peterborgapps.com/lingon/).
 
 ## Configuration (optional)
 
@@ -69,6 +85,22 @@ leagues + MLS. To change that, drop a config file at
 
 Other ESPN slugs include `eng.2` (Championship), `ned.1` (Eredivisie),
 `por.1` (Primeira Liga), `bra.1` (Brasileirão), `uefa.europa`, `mex.1`.
+
+The config file lives at `~/.config/soccer-ticker/config.json` on Linux and
+`~/Library/Application Support/soccer-ticker/config.json` on macOS.
+
+## Project layout
+
+```
+soccer_ticker/
+  core.py            # ESPN client, match model, logo cache — no GUI deps
+  frontend_linux.py  # GTK3 AppIndicator (top bar)
+  frontend_macos.py  # rumps menu-bar app (NSStatusItem)
+  __main__.py        # picks the front-end by platform
+```
+
+All the data logic is in `core.py`; the front-ends only render it, so a fix in
+one place benefits both platforms.
 
 ## Notes
 
