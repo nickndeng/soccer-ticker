@@ -15,7 +15,8 @@ from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GLib  # noqa: E402
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gtk, GLib, GdkPixbuf  # noqa: E402
 
 # AppIndicator bindings: prefer the maintained Ayatana fork, fall back to the
 # legacy Canonical one. One of these must be installed (see README).
@@ -168,9 +169,12 @@ class SoccerTicker:
                     resp.raise_for_status()
                     data = resp.json()
                     league = (data.get("leagues") or [{}])[0]
-                    logo = self._ensure_logo(slug, self._pick_logo(league))
+                    # Two variants: light-on-dark for the tray, full-colour for
+                    # the dropdown menu (which sits on a light background).
+                    logo = self._ensure_logo(slug, self._pick_logo(league, "dark"), "dark")
+                    logo_menu = self._ensure_logo(slug, self._pick_logo(league, "default"), "color")
                     for ev in data.get("events", []):
-                        m = self._normalize(ev, name, logo)
+                        m = self._normalize(ev, name, logo, logo_menu)
                         if m is not None:
                             matches.append(m)
                 except Exception as exc:  # network / parse / HTTP errors
@@ -180,20 +184,20 @@ class SoccerTicker:
         GLib.idle_add(self._apply_results, matches, error)
 
     @staticmethod
-    def _pick_logo(league):
-        """Prefer the dark-background (light-colored) logo for the top bar."""
+    def _pick_logo(league, prefer):
+        """Return the logo URL matching the preferred rel ('dark'/'default')."""
         logos = league.get("logos") or []
         for L in logos:
-            if "dark" in (L.get("rel") or []):
+            if prefer in (L.get("rel") or []):
                 return L.get("href")
         return logos[0].get("href") if logos else None
 
     @staticmethod
-    def _ensure_logo(slug, url):
-        """Download a league logo to the cache once; return its file path."""
+    def _ensure_logo(slug, url, variant):
+        """Download a league logo variant to the cache once; return its path."""
         if not url:
             return None
-        path = CACHE_DIR / f"{slug.replace('.', '_')}.png"
+        path = CACHE_DIR / f"{slug.replace('.', '_')}_{variant}.png"
         if path.exists():
             return str(path)
         try:
@@ -206,7 +210,7 @@ class SoccerTicker:
             return None
 
     @staticmethod
-    def _normalize(ev, league_name, logo=None):
+    def _normalize(ev, league_name, logo=None, logo_menu=None):
         try:
             comp = ev["competitions"][0]
             status_block = ev.get("status", {})
@@ -242,24 +246,46 @@ class SoccerTicker:
 
         hs, as_ = stats(home), stats(away)
 
-        # Goals/own-goals from the play-by-play "details" (cards have scoreValue 0).
+        # Goals & cards from the play-by-play "details". Goals carry a
+        # scoreValue >= 1 (or "goal" in the type text); cards say "Card".
         home_id = str(home.get("team", {}).get("id"))
-        scorers = []
+
+        def side_of(play):
+            return "home" if str((play.get("team") or {}).get("id")) == home_id else "away"
+
+        def player(play, fallback):
+            names = [a.get("displayName", "?") for a in play.get("athletesInvolved") or []]
+            return names[0] if names else fallback
+
+        scorers, cards = [], []
         for p in comp.get("details") or []:
             text = (p.get("type") or {}).get("text", "") or ""
-            if (p.get("scoreValue") or 0) >= 1 or "goal" in text.lower():
-                names = [a.get("displayName", "?") for a in p.get("athletesInvolved") or []]
+            minute = (p.get("clock") or {}).get("displayValue", "")
+            low = text.lower()
+            if (p.get("scoreValue") or 0) >= 1 or "goal" in low:
                 scorers.append({
-                    "name": names[0] if names else text,
-                    "minute": (p.get("clock") or {}).get("displayValue", ""),
-                    "side": "home" if str((p.get("team") or {}).get("id")) == home_id else "away",
-                    "own": "own" in text.lower(),
+                    "name": player(p, text), "minute": minute,
+                    "side": side_of(p), "own": "own" in low,
+                })
+            elif "card" in low:
+                cards.append({
+                    "name": player(p, text), "minute": minute,
+                    "side": side_of(p), "red": "red" in low,
                 })
 
         broadcasts = []
         for b in comp.get("broadcasts") or []:
             broadcasts.extend(b.get("names") or [])
         venue = (comp.get("venue") or ev.get("venue") or {}).get("fullName")
+
+        odds_raw = (comp.get("odds") or [{}])[0]
+        odds = None
+        if odds_raw.get("details") or odds_raw.get("overUnder") is not None:
+            odds = {
+                "summary": odds_raw.get("details"),
+                "over_under": odds_raw.get("overUnder"),
+                "provider": (odds_raw.get("provider") or {}).get("displayName"),
+            }
 
         return {
             "home": tag(home),
@@ -271,8 +297,12 @@ class SoccerTicker:
             "clock": clock,                 # compact, for the tray label
             "status_detail": status_detail,  # verbose, for the dropdown
             "competition": league_name,
-            "logo": logo,
+            "logo": logo,            # tray icon (light-on-dark)
+            "logo_menu": logo_menu,  # dropdown icon (full colour)
             "scorers": scorers,
+            "cards": cards,
+            "form": (home.get("form"), away.get("form")),
+            "odds": odds,
             "possession": (hs.get("possessionPct"), as_.get("possessionPct")),
             "shots": (hs.get("totalShots"), as_.get("totalShots")),
             "shots_on_target": (hs.get("shotsOnTarget"), as_.get("shotsOnTarget")),
@@ -322,14 +352,21 @@ class SoccerTicker:
 
     def _add_match(self, m):
         """Render one live match as a block of (disabled) detail rows."""
-        self._add_info(f"⚽  {m['home_full']}  {m['hg']} - {m['ag']}  {m['away_full']}")
-        self._add_info(f"      {m['status_detail']}   ·   {m['competition']}")
+        self._add_info(f"{m['home_full']}  {m['hg']} - {m['ag']}  {m['away_full']}")
+        # Competition logo + name, then the live status.
+        self._add_info_icon(m.get("logo_menu"), f"{m['competition']}   ·   {m['status_detail']}")
 
         for g in m.get("scorers", []):
             side = m["home"] if g["side"] == "home" else m["away"]
             mark = "⚽(OG)" if g["own"] else "⚽"
             minute = f"{g['minute']} " if g["minute"] else ""
             self._add_info(f"         {mark} {minute}{g['name']} ({side})")
+
+        for c in m.get("cards", []):
+            side = m["home"] if c["side"] == "home" else m["away"]
+            mark = "🟥" if c["red"] else "🟨"
+            minute = f"{c['minute']} " if c["minute"] else ""
+            self._add_info(f"         {mark} {minute}{c['name']} ({side})")
 
         ph, pa = m.get("possession", (None, None))
         if ph and pa:
@@ -339,6 +376,24 @@ class SoccerTicker:
         if sh and sa:
             extra = f"  ({th}/{ta} on target)" if th and ta else ""
             self._add_info(f"      Shots  {sh} – {sa}{extra}")
+
+        fh, fa = m.get("form", (None, None))
+        if fh or fa:
+            self._add_info(f"      Form  {fh or '–'} – {fa or '–'}  (home–away, recent)")
+
+        odds = m.get("odds")
+        if odds:
+            bits = []
+            if odds.get("summary"):
+                bits.append(odds["summary"])
+            if odds.get("over_under") is not None:
+                bits.append(f"O/U {odds['over_under']}")
+            line = "  ·  ".join(bits)
+            if odds.get("provider"):
+                line += f"   ({odds['provider']})"
+            if line:
+                self._add_info(f"      💰 {line}")
+
         if m.get("venue"):
             self._add_info(f"      📍 {m['venue']}")
         if m.get("tv"):
@@ -346,6 +401,21 @@ class SoccerTicker:
 
     def _add_info(self, text):
         item = Gtk.MenuItem(label=text)
+        item.set_sensitive(False)
+        self.menu.append(item)
+
+    def _add_info_icon(self, icon_path, text):
+        """A disabled menu row with a small icon (e.g. competition logo) + text."""
+        item = Gtk.MenuItem()
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        if icon_path:
+            try:
+                pb = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
+                box.pack_start(Gtk.Image.new_from_pixbuf(pb), False, False, 0)
+            except Exception:
+                pass
+        box.pack_start(Gtk.Label(label=text), False, False, 0)
+        item.add(box)
         item.set_sensitive(False)
         self.menu.append(item)
 
