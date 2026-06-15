@@ -63,14 +63,62 @@ Adjust the `Path=` line if you cloned it elsewhere.)
 
 ## macOS
 
+### 1. Install dependencies
+
+Requires Python 3 (the system `python3`, or one from [python.org](https://www.python.org/)
+/ Homebrew). Then install the two Python packages:
+
 ```bash
 pip3 install requests rumps
-python3 -m soccer_ticker      # from the repo root
 ```
 
-The score appears in the menu bar with the competition logo as the icon; click
-it for the full match list. To launch at login, wrap it with a `launchd` agent
-or a tool like [`lingon`](https://www.peterborgapps.com/lingon/).
+`rumps` is the menu-bar framework; it pulls in PyObjC automatically.
+
+### 2. Run
+
+```bash
+git clone https://github.com/nickndeng/soccer-ticker.git
+cd soccer-ticker
+python3 -m soccer_ticker
+```
+
+The score appears in the **menu bar** with the competition logo as the icon,
+and it rotates through all live matches. Click it for the full match list
+(scorers, cards, stats, form, odds, venue, TV). With no live matches it shows
+`no live games`; if the network is down, `offline`.
+
+### 3. Start automatically on login (optional)
+
+Create a `launchd` agent at `~/Library/LaunchAgents/com.soccer-ticker.plist`
+(replace both paths to match your Python and clone location):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>            <string>com.soccer-ticker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>-m</string>
+        <string>soccer_ticker</string>
+    </array>
+    <key>WorkingDirectory</key> <string>/Users/YOU/path/to/soccer-ticker</string>
+    <key>RunAtLoad</key>        <true/>
+</dict>
+</plist>
+```
+
+Then load it:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.soccer-ticker.plist
+```
+
+(Prefer a GUI? [`lingon`](https://www.peterborgapps.com/lingon/) manages login
+items without editing plists.)
 
 ## Configuration (optional)
 
