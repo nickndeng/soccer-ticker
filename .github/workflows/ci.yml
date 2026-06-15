@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  linux:
+    name: Linux (GTK AppIndicator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Use the system Python so the apt-installed PyGObject (gi) is importable.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
+            python3-requests
+
+      - name: Byte-compile all modules
+        run: python3 -m py_compile soccer_ticker/*.py
+
+      - name: Import core (toolkit-free)
+        run: python3 -c "from soccer_ticker import core; assert core.load_leagues(); print('core OK')"
+
+      - name: Import Linux front-end
+        run: |
+          python3 -c "from soccer_ticker import frontend_linux as f; \
+            print('frontend_linux OK; AppIndicator =', f.AppIndicator)"
+
+  macos:
+    name: macOS (rumps menu bar)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install requests rumps
+
+      - name: Byte-compile all modules
+        run: python -m py_compile soccer_ticker/*.py
+
+      - name: Import core (toolkit-free)
+        run: python -c "from soccer_ticker import core; assert core.load_leagues(); print('core OK')"
+
+      - name: Import macOS front-end
+        run: python -c "from soccer_ticker import frontend_macos; print('frontend_macos OK')"
