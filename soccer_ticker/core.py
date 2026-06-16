@@ -132,6 +132,25 @@ def _sides(comp):
     return home, away
 
 
+def ensure_team_logo(team):
+    """Cache a team's crest (by team id) and return its file path, or None."""
+    tid, url = team.get("id"), team.get("logo")
+    if not tid or not url:
+        return None
+    return ensure_logo(f"team_{tid}", url, "crest")
+
+
+def _attach_crests(m, comp):
+    """Add home/away team crest paths to a normalized match dict."""
+    try:
+        home, away = _sides(comp)
+    except (KeyError, StopIteration):
+        m["home_logo"] = m["away_logo"] = None
+        return
+    m["home_logo"] = ensure_team_logo(home.get("team", {}))
+    m["away_logo"] = ensure_team_logo(away.get("team", {}))
+
+
 def normalize(ev, league_name, logo=None, logo_menu=None):
     """Turn one ESPN event into a flat dict, or None if it isn't in progress."""
     try:
@@ -146,10 +165,11 @@ def normalize(ev, league_name, logo=None, logo_menu=None):
 
     tag, full = _tag, _full
 
-    # Friendly clock/status. ESPN reports "HT" / "Halftime" — spell it out.
+    # Concise clock for the bar, verbose status for the dropdown. At half-time
+    # the bar stays compact ("HT") while the dropdown spells out "Half Time".
     is_ht = "HALFTIME" in (status.get("name") or "")
     if is_ht:
-        clock = "Half Time"
+        clock = "HT"
         status_detail = "Half Time"
     else:
         clock = status_block.get("displayClock") or status.get("shortDetail") or "LIVE"
@@ -292,12 +312,15 @@ def fetch_matches(leagues):
                 logo = ensure_logo(slug, pick_logo(league, "dark"), "dark")
                 logo_menu = ensure_logo(slug, pick_logo(league, "default"), "color")
                 for ev in data.get("events", []):
+                    comp = (ev.get("competitions") or [{}])[0]
                     m = normalize(ev, name, logo, logo_menu)
                     if m is not None:
+                        _attach_crests(m, comp)
                         live.append(m)
                         continue
                     u = normalize_upcoming(ev, name, logo, logo_menu)
                     if u is not None:
+                        _attach_crests(u, comp)
                         upcoming.append(u)
             except Exception as exc:  # network / parse / HTTP errors
                 errors.append(f"{slug}: {exc}")

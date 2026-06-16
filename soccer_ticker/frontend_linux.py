@@ -161,8 +161,10 @@ class SoccerTicker:
 
     def _add_match(self, m):
         """Render one live match as a block of (disabled) detail rows."""
-        self._add_info(f"{m['home_full']}  {m['hg']} - {m['ag']}  {m['away_full']}")
-        # Competition logo + name, then the live status.
+        # Each team: crest + full name + score.
+        self._add_info_icon(m.get("home_logo"), f"{m['home_full']}   {m['hg']}")
+        self._add_info_icon(m.get("away_logo"), f"{m['away_full']}   {m['ag']}")
+        # Competition logo + name, then the live status (verbose).
         self._add_info_icon(m.get("logo_menu"), f"{m['competition']}   ·   {m['status_detail']}")
 
         for g in m.get("scorers", []):
@@ -210,7 +212,8 @@ class SoccerTicker:
 
     def _add_upcoming(self, u):
         """Render one scheduled match as a compact (disabled) block."""
-        self._add_info(f"{u['home_full']}  v  {u['away_full']}")
+        self._add_info_icon(u.get("home_logo"), u["home_full"])
+        self._add_info_icon(u.get("away_logo"), u["away_full"])
         self._add_info_icon(u.get("logo_menu"),
                             f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}")
         if u.get("venue"):

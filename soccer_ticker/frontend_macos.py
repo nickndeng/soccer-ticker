@@ -143,13 +143,17 @@ class SoccerTickerMac(rumps.App):
         for it in items:
             self.menu.add(it)
 
+    def _crest_item(self, logo, text):
+        return rumps.MenuItem(self._uniq(text), icon=logo, dimensions=[16, 16])
+
     def _match_items(self, m):
-        out = [self._info(f"{m['home_full']}  {m['hg']} - {m['ag']}  {m['away_full']}")]
-        # Competition logo (native icon) + name + status.
-        out.append(rumps.MenuItem(
-            self._uniq(f"{m['competition']}   ·   {m['status_detail']}"),
-            icon=m.get("logo_menu"), dimensions=[16, 16],
-        ))
+        out = [
+            # Each team: crest + full name + score.
+            self._crest_item(m.get("home_logo"), f"{m['home_full']}   {m['hg']}"),
+            self._crest_item(m.get("away_logo"), f"{m['away_full']}   {m['ag']}"),
+            # Competition logo + name + status (verbose).
+            self._crest_item(m.get("logo_menu"), f"{m['competition']}   ·   {m['status_detail']}"),
+        ]
 
         for g in m.get("scorers", []):
             side = m["home"] if g["side"] == "home" else m["away"]
@@ -196,11 +200,12 @@ class SoccerTickerMac(rumps.App):
         return out
 
     def _upcoming_items(self, u):
-        out = [self._info(f"{u['home_full']}  v  {u['away_full']}")]
-        out.append(rumps.MenuItem(
-            self._uniq(f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}"),
-            icon=u.get("logo_menu"), dimensions=[16, 16],
-        ))
+        out = [
+            self._crest_item(u.get("home_logo"), u["home_full"]),
+            self._crest_item(u.get("away_logo"), u["away_full"]),
+            self._crest_item(u.get("logo_menu"),
+                             f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}"),
+        ]
         if u.get("venue"):
             out.append(self._info(f"    📍 {u['venue']}"))
         if u.get("tv"):
