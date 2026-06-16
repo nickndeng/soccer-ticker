@@ -6,6 +6,7 @@ imported on Linux and macOS alike. The per-platform front-ends consume it.
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -103,6 +104,34 @@ def ensure_logo(slug, url, variant):
         return None
 
 
+def _tag(team):
+    t = team.get("team", {})
+    return t.get("abbreviation") or t.get("shortDisplayName") or t.get("displayName") or "?"
+
+
+def _full(team):
+    return team.get("team", {}).get("displayName", "?")
+
+
+def _broadcasts(comp):
+    names = []
+    for b in comp.get("broadcasts") or []:
+        names.extend(b.get("names") or [])
+    return ", ".join(dict.fromkeys(names))  # de-duped, order-preserving
+
+
+def _venue(comp, ev):
+    return (comp.get("venue") or ev.get("venue") or {}).get("fullName")
+
+
+def _sides(comp):
+    """Return (home, away) competitor dicts, raising if either is missing."""
+    sides = comp["competitors"]
+    home = next(t for t in sides if t.get("homeAway") == "home")
+    away = next(t for t in sides if t.get("homeAway") == "away")
+    return home, away
+
+
 def normalize(ev, league_name, logo=None, logo_menu=None):
     """Turn one ESPN event into a flat dict, or None if it isn't in progress."""
     try:
@@ -111,18 +140,11 @@ def normalize(ev, league_name, logo=None, logo_menu=None):
         status = status_block.get("type", {})
         if status.get("state") != "in":   # only matches in progress
             return None
-        sides = comp["competitors"]
-        home = next(t for t in sides if t.get("homeAway") == "home")
-        away = next(t for t in sides if t.get("homeAway") == "away")
+        home, away = _sides(comp)
     except (KeyError, IndexError, StopIteration):
         return None
 
-    def tag(team):
-        t = team.get("team", {})
-        return t.get("abbreviation") or t.get("shortDisplayName") or t.get("displayName") or "?"
-
-    def full(team):
-        return team.get("team", {}).get("displayName", "?")
+    tag, full = _tag, _full
 
     # Friendly clock/status. ESPN reports "HT" / "Halftime" — spell it out.
     is_ht = "HALFTIME" in (status.get("name") or "")
@@ -167,11 +189,6 @@ def normalize(ev, league_name, logo=None, logo_menu=None):
                 "side": side_of(p), "red": "red" in low,
             })
 
-    broadcasts = []
-    for b in comp.get("broadcasts") or []:
-        broadcasts.extend(b.get("names") or [])
-    venue = (comp.get("venue") or ev.get("venue") or {}).get("fullName")
-
     odds_raw = (comp.get("odds") or [{}])[0]
     odds = None
     if odds_raw.get("details") or odds_raw.get("overUnder") is not None:
@@ -200,22 +217,73 @@ def normalize(ev, league_name, logo=None, logo_menu=None):
         "possession": (hs.get("possessionPct"), as_.get("possessionPct")),
         "shots": (hs.get("totalShots"), as_.get("totalShots")),
         "shots_on_target": (hs.get("shotsOnTarget"), as_.get("shotsOnTarget")),
-        "venue": venue,
-        "tv": ", ".join(dict.fromkeys(broadcasts)),  # de-duped, order-preserving
+        "venue": _venue(comp, ev),
+        "tv": _broadcasts(comp),
     }
 
 
-def fetch_live_matches(leagues):
-    """Poll every watched league and return (matches, error).
+def normalize_upcoming(ev, league_name, logo=None, logo_menu=None):
+    """Turn one ESPN event into an 'upcoming match' dict, or None if not scheduled."""
+    try:
+        comp = ev["competitions"][0]
+        status = ev.get("status", {}).get("type", {})
+        if status.get("state") != "pre":   # only not-yet-started matches
+            return None
+        home, away = _sides(comp)
+        kickoff = datetime.fromisoformat(ev["date"].replace("Z", "+00:00"))
+    except (KeyError, IndexError, StopIteration, ValueError):
+        return None
 
-    `error` is a string only when *every* league request failed (so a single
-    flaky league doesn't blank the display), otherwise None.
+    return {
+        "home": _tag(home),
+        "away": _tag(away),
+        "home_full": _full(home),
+        "away_full": _full(away),
+        "competition": league_name,
+        "logo": logo,
+        "logo_menu": logo_menu,
+        "kickoff": kickoff,          # tz-aware UTC datetime
+        "venue": _venue(comp, ev),
+        "tv": _broadcasts(comp),
+    }
+
+
+def kickoff_when(m):
+    """Human kickoff time in local tz: 'HH:MM' today, else 'Wed HH:MM'."""
+    ko = m["kickoff"].astimezone()
+    if ko.date() == datetime.now().astimezone().date():
+        return ko.strftime("%H:%M")
+    return ko.strftime("%a %H:%M")
+
+
+def upcoming_label(m):
+    """Compact one-line label for the menu-bar/top-bar: 'ARS v CHE 19:00'."""
+    return f"{m['home']} v {m['away']} {kickoff_when(m)}"
+
+
+def upcoming_within(upcoming, within_hours=24):
+    """Upcoming matches kicking off within the window, soonest first."""
+    cutoff = datetime.now(timezone.utc) + timedelta(hours=within_hours)
+    return sorted((m for m in upcoming if m["kickoff"] <= cutoff),
+                  key=lambda m: m["kickoff"])
+
+
+def fetch_matches(leagues):
+    """Poll every watched league and return (live, upcoming, error).
+
+    Queries a today→tomorrow window so upcoming games in the next 24h (which may
+    fall on tomorrow's date) are included. `error` is a string only when *every*
+    league request failed (so a single flaky league doesn't blank the display).
     """
-    matches, errors = [], []
+    now = datetime.now(timezone.utc)
+    date_range = f"{now:%Y%m%d}-{now + timedelta(days=1):%Y%m%d}"
+
+    live, upcoming, errors = [], [], []
     with requests.Session() as session:
         for slug, name in leagues:
             try:
-                resp = session.get(ESPN_URL.format(slug=slug), timeout=8, headers=_UA)
+                resp = session.get(ESPN_URL.format(slug=slug),
+                                   params={"dates": date_range}, timeout=8, headers=_UA)
                 resp.raise_for_status()
                 data = resp.json()
                 league = (data.get("leagues") or [{}])[0]
@@ -226,11 +294,15 @@ def fetch_live_matches(leagues):
                 for ev in data.get("events", []):
                     m = normalize(ev, name, logo, logo_menu)
                     if m is not None:
-                        matches.append(m)
+                        live.append(m)
+                        continue
+                    u = normalize_upcoming(ev, name, logo, logo_menu)
+                    if u is not None:
+                        upcoming.append(u)
             except Exception as exc:  # network / parse / HTTP errors
                 errors.append(f"{slug}: {exc}")
     error = "; ".join(errors) if len(errors) == len(leagues) else None
-    return matches, error
+    return live, upcoming, error
 
 
 def score_label(m):

@@ -49,8 +49,9 @@ extension.
 python3 -m soccer_ticker      # from the repo root
 ```
 
-The indicator appears in the top bar. With no live matches it shows
-`no live games`; if the network is down it shows `offline`.
+The indicator appears in the top bar. When nothing is live it shows the **next
+match kicking off within 24h** (e.g. `IRQ v NOR 15:00`); with no upcoming match
+either, it shows just the icon. If the network is down it shows `offline`.
 
 ### 3. Start automatically on login (optional)
 
@@ -84,8 +85,8 @@ python3 -m soccer_ticker
 
 The score appears in the **menu bar** with the competition logo as the icon,
 and it rotates through all live matches. Click it for the full match list
-(scorers, cards, stats, form, odds, venue, TV). With no live matches it shows
-`no live games`; if the network is down, `offline`.
+(scorers, cards, stats, form, odds, venue, TV). When nothing is live it shows
+the next match within 24h, or just the soccer icon if there's none.
 
 ### 3. Start automatically on login (optional)
 
@@ -155,8 +156,10 @@ one place benefits both platforms.
 - Polls every 30s across the watched leagues. ESPN's API is undocumented but
   public and free; there's no published rate limit, but keep the league list
   reasonable.
-- Only matches with state `in` (being played, including half-time) appear.
-- A failure on one league is ignored; the label only shows `⚽ offline` if
+- Live matches (state `in`, including half-time) are shown first. When none are
+  live, it falls back to the soonest match kicking off within the next 24h, and
+  to just the icon if there's nothing in that window.
+- A failure on one league is ignored; the label only shows `offline` if
   every league request fails.
 - Why not football-data.org? Its free tier does **not** provide real-time
   in-play status — a World Cup match 40 minutes in still reported as

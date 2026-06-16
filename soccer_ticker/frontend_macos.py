@@ -27,6 +27,7 @@ class SoccerTickerMac(rumps.App):
         super().__init__("Soccer Ticker", title="…", quit_button=None)
         self.leagues = core.load_leagues()
         self.matches = []
+        self.upcoming = []
         self.rotate_index = 0
         self.last_updated = None
         self.last_error = None
@@ -47,18 +48,19 @@ class SoccerTickerMac(rumps.App):
         threading.Thread(target=self._fetch_worker, daemon=True).start()
 
     def _fetch_worker(self):
-        matches, error = core.fetch_live_matches(self.leagues)
+        live, upcoming, error = core.fetch_matches(self.leagues)
         with self._lock:
-            self._pending = (matches, error)
+            self._pending = (live, upcoming, error)
 
     # ---- main-thread tick: apply results + rotate ----------------------
     def _on_tick(self, _):
         with self._lock:
             pending, self._pending = self._pending, None
         if pending is not None:
-            matches, error = pending
-            if matches or error is None:
-                self.matches = matches
+            live, upcoming, error = pending
+            if live or upcoming or error is None:
+                self.matches = live
+                self.upcoming = upcoming
                 self.last_updated = datetime.now()
                 self.rotate_index = 0
             self.last_error = error
@@ -71,11 +73,19 @@ class SoccerTickerMac(rumps.App):
             self._refresh_display()
 
     # ---- menu-bar title + icon -----------------------------------------
+    def _soonest_upcoming(self):
+        within = core.upcoming_within(self.upcoming, 24)
+        return within[0] if within else None
+
     def _refresh_display(self):
         self.title = self._title_text()
         logo = None
         if self.matches:
             logo = self.matches[self.rotate_index % len(self.matches)].get("logo_menu")
+        else:
+            up = self._soonest_upcoming()
+            if up:
+                logo = up.get("logo_menu")
         try:
             self.icon = logo            # path or None; rumps scales to the bar
             self.template = False       # keep the logo in colour, not monochrome
@@ -83,11 +93,14 @@ class SoccerTickerMac(rumps.App):
             pass
 
     def _title_text(self):
-        if self.last_error and not self.matches:
+        if self.matches:
+            return core.score_label(self.matches[self.rotate_index % len(self.matches)])
+        up = self._soonest_upcoming()
+        if up:
+            return core.upcoming_label(up)
+        if self.last_error:
             return "offline"
-        if not self.matches:
-            return "no live games"
-        return core.score_label(self.matches[self.rotate_index % len(self.matches)])
+        return "⚽"   # no live or upcoming match: just the soccer icon
 
     # ---- dropdown menu -------------------------------------------------
     def _uniq(self, text):
@@ -104,13 +117,19 @@ class SoccerTickerMac(rumps.App):
         self._uid = 0
         items = []
 
+        within = core.upcoming_within(self.upcoming, 24)
         if self.matches:
             for i, m in enumerate(self.matches):
                 if i:
                     items.append(rumps.separator)
                 items.extend(self._match_items(m))
+        elif within:
+            items.append(self._info("Upcoming (next 24h)"))
+            for u in within:
+                items.append(rumps.separator)
+                items.extend(self._upcoming_items(u))
         else:
-            items.append(self._info("No live matches right now"))
+            items.append(self._info("No live or upcoming matches"))
             if self.last_error:
                 items.append(self._info(f"   ({self.last_error[:48]})"))
 
@@ -174,6 +193,18 @@ class SoccerTickerMac(rumps.App):
             out.append(self._info(f"    📍 {m['venue']}"))
         if m.get("tv"):
             out.append(self._info(f"    📺 {m['tv']}"))
+        return out
+
+    def _upcoming_items(self, u):
+        out = [self._info(f"{u['home_full']}  v  {u['away_full']}")]
+        out.append(rumps.MenuItem(
+            self._uniq(f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}"),
+            icon=u.get("logo_menu"), dimensions=[16, 16],
+        ))
+        if u.get("venue"):
+            out.append(self._info(f"    📍 {u['venue']}"))
+        if u.get("tv"):
+            out.append(self._info(f"    📺 {u['tv']}"))
         return out
 
 

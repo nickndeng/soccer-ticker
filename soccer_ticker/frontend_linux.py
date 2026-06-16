@@ -30,6 +30,7 @@ class SoccerTicker:
     def __init__(self):
         self.leagues = core.load_leagues()
         self.matches = []           # list of normalized live-match dicts
+        self.upcoming = []          # scheduled matches (for when nothing is live)
         self.rotate_index = 0
         self.last_updated = None
         self.last_error = None
@@ -62,22 +63,34 @@ class SoccerTicker:
             self.indicator.set_icon_full(target, "competition")
             self.current_icon = target
 
+    def _soonest_upcoming(self):
+        """The next match within 24h to show when nothing is live, else None."""
+        within = core.upcoming_within(self.upcoming, 24)
+        return within[0] if within else None
+
     def _refresh_display(self):
-        """Update both the label and the icon for the currently shown match."""
+        """Update both the label and the icon for whatever's currently shown."""
         self._set_label(self._current_label_text())
         logo = None
         if self.matches:
             logo = self.matches[self.rotate_index % len(self.matches)].get("logo")
-        self._set_icon(logo)
+        else:
+            up = self._soonest_upcoming()
+            if up:
+                logo = up.get("logo")
+        self._set_icon(logo)  # None -> default soccer icon
 
     def _current_label_text(self):
         # No emoji here — the tray icon (competition logo or soccer fallback)
         # is the only graphic; a "⚽" prefix would look like a second icon.
-        if self.last_error and not self.matches:
+        if self.matches:
+            return core.score_label(self.matches[self.rotate_index % len(self.matches)])
+        up = self._soonest_upcoming()
+        if up:
+            return core.upcoming_label(up)
+        if self.last_error:
             return "offline"
-        if not self.matches:
-            return "no live games"
-        return core.score_label(self.matches[self.rotate_index % len(self.matches)])
+        return ""   # no live or upcoming match within 24h: show the icon only
 
     # ---- timers --------------------------------------------------------
     def _on_fetch_timer(self):
@@ -96,12 +109,13 @@ class SoccerTicker:
         return False  # so this can be used as a one-shot idle callback
 
     def _fetch_worker(self):
-        matches, error = core.fetch_live_matches(self.leagues)
-        GLib.idle_add(self._apply_results, matches, error)
+        live, upcoming, error = core.fetch_matches(self.leagues)
+        GLib.idle_add(self._apply_results, live, upcoming, error)
 
-    def _apply_results(self, matches, error):
-        if matches or error is None:
-            self.matches = matches
+    def _apply_results(self, live, upcoming, error):
+        if live or upcoming or error is None:
+            self.matches = live
+            self.upcoming = upcoming
             self.last_updated = datetime.now()
             self.rotate_index = 0
         self.last_error = error
@@ -114,13 +128,19 @@ class SoccerTicker:
         for child in self.menu.get_children():
             self.menu.remove(child)
 
+        within = core.upcoming_within(self.upcoming, 24)
         if self.matches:
             for i, m in enumerate(self.matches):
                 if i:
                     self._add_separator()
                 self._add_match(m)
+        elif within:
+            self._add_info("Upcoming (next 24h)")
+            for u in within:
+                self._add_separator()
+                self._add_upcoming(u)
         else:
-            self._add_info("No live matches right now")
+            self._add_info("No live or upcoming matches")
             if self.last_error:
                 self._add_info(f"   ({self.last_error[:48]})")
 
@@ -187,6 +207,16 @@ class SoccerTicker:
             self._add_info(f"      📍 {m['venue']}")
         if m.get("tv"):
             self._add_info(f"      📺 {m['tv']}")
+
+    def _add_upcoming(self, u):
+        """Render one scheduled match as a compact (disabled) block."""
+        self._add_info(f"{u['home_full']}  v  {u['away_full']}")
+        self._add_info_icon(u.get("logo_menu"),
+                            f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}")
+        if u.get("venue"):
+            self._add_info(f"      📍 {u['venue']}")
+        if u.get("tv"):
+            self._add_info(f"      📺 {u['tv']}")
 
     def _add_info(self, text):
         item = Gtk.MenuItem(label=text)
