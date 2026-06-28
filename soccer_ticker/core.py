@@ -291,12 +291,17 @@ def upcoming_within(upcoming, within_hours=24):
 def fetch_matches(leagues):
     """Poll every watched league and return (live, upcoming, error).
 
-    Queries a today→tomorrow window so upcoming games in the next 24h (which may
-    fall on tomorrow's date) are included. `error` is a string only when *every*
-    league request failed (so a single flaky league doesn't blank the display).
+    The date window is built from the user's LOCAL day, not UTC: late evening
+    games can sit on the next UTC date, so a UTC-based window would drop tonight's
+    games and surface tomorrow's instead. ESPN also groups events by US-Eastern
+    date, so the window is widened a day on each side to absorb any offset.
+    Downstream filtering keeps only live + next-24h games (finished ones dropped),
+    so the over-fetch is harmless. `error` is set only when *every* league failed.
     """
-    now = datetime.now(timezone.utc)
-    date_range = f"{now:%Y%m%d}-{now + timedelta(days=1):%Y%m%d}"
+    now_local = datetime.now().astimezone()
+    start = (now_local - timedelta(days=1)).strftime("%Y%m%d")
+    end = (now_local + timedelta(days=1)).strftime("%Y%m%d")
+    date_range = f"{start}-{end}"
 
     live, upcoming, errors = [], [], []
     with requests.Session() as session:
