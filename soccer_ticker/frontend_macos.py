@@ -148,9 +148,10 @@ class SoccerTickerMac(rumps.App):
 
     def _match_items(self, m):
         out = [
-            # Each team: crest + full name + score.
-            self._crest_item(m.get("home_logo"), f"{m['home_full']}   {m['hg']}"),
-            self._crest_item(m.get("away_logo"), f"{m['away_full']}   {m['ag']}"),
+            # Both teams + score on one line (rumps allows a single leading icon,
+            # so the home crest leads).
+            self._crest_item(m.get("home_logo"),
+                             f"{m['home_full']} {m['hg']} - {m['ag']} {m['away_full']}"),
             # Competition logo + name + status (verbose).
             self._crest_item(m.get("logo_menu"), f"{m['competition']}   ·   {m['status_detail']}"),
         ]
@@ -201,8 +202,8 @@ class SoccerTickerMac(rumps.App):
 
     def _upcoming_items(self, u):
         out = [
-            self._crest_item(u.get("home_logo"), u["home_full"]),
-            self._crest_item(u.get("away_logo"), u["away_full"]),
+            # Both team names on one line (home crest leads).
+            self._crest_item(u.get("home_logo"), f"{u['home_full']}  v  {u['away_full']}"),
             self._crest_item(u.get("logo_menu"),
                              f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}"),
         ]

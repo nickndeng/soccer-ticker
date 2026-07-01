@@ -161,9 +161,11 @@ class SoccerTicker:
 
     def _add_match(self, m):
         """Render one live match as a block of (disabled) detail rows."""
-        # Each team: crest + full name + score.
-        self._add_info_icon(m.get("home_logo"), f"{m['home_full']}   {m['hg']}")
-        self._add_info_icon(m.get("away_logo"), f"{m['away_full']}   {m['ag']}")
+        # Both crests + both teams and the score on one line.
+        self._add_info_icons(
+            [m.get("home_logo"), m.get("away_logo")],
+            f"{m['home_full']} {m['hg']} - {m['ag']} {m['away_full']}",
+        )
         # Competition logo + name, then the live status (verbose).
         self._add_info_icon(m.get("logo_menu"), f"{m['competition']}   ·   {m['status_detail']}")
 
@@ -212,8 +214,11 @@ class SoccerTicker:
 
     def _add_upcoming(self, u):
         """Render one scheduled match as a compact (disabled) block."""
-        self._add_info_icon(u.get("home_logo"), u["home_full"])
-        self._add_info_icon(u.get("away_logo"), u["away_full"])
+        # Both crests + both team names on one line.
+        self._add_info_icons(
+            [u.get("home_logo"), u.get("away_logo")],
+            f"{u['home_full']}  v  {u['away_full']}",
+        )
         self._add_info_icon(u.get("logo_menu"),
                             f"{u['competition']}   ·   Kicks off {core.kickoff_when(u)}")
         if u.get("venue"):
@@ -228,9 +233,15 @@ class SoccerTicker:
 
     def _add_info_icon(self, icon_path, text):
         """A disabled menu row with a small icon (e.g. competition logo) + text."""
+        self._add_info_icons([icon_path], text)
+
+    def _add_info_icons(self, icon_paths, text):
+        """A disabled menu row with one or more leading icons + text."""
         item = Gtk.MenuItem()
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        if icon_path:
+        for icon_path in icon_paths:
+            if not icon_path:
+                continue
             try:
                 pb = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 16, 16)
                 box.pack_start(Gtk.Image.new_from_pixbuf(pb), False, False, 0)
